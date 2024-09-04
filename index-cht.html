@@ -1,0 +1,483 @@
+<html><head>
+<title>3D Iris Classifier with SVM Decision Boundary</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+<style>
+  body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: Arial, sans-serif;
+    overflow: hidden;
+  }
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background-color: #f0f0f0;
+  }
+  header {
+    background-color: #333;
+    color: white;
+    text-align: center;
+    padding: 10px 0;
+    flex: 0 0 auto;
+  }
+  h1 {
+    margin: 0;
+    font-size: 1.5em;
+  }
+  main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+  #chart-container {
+    flex: 1;
+    min-height: 0;
+  }
+  #controls {
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+    background-color: #ddd;
+    overflow-y: auto;
+    width: 200px;
+  }
+  .control-group {
+    margin-bottom: 15px;
+    display: flex;
+    flex-direction: column;
+  }
+  .control-group h3 {
+    margin: 0 0 10px 0;
+    font-size: 1.1em;
+    color: #333;
+  }
+  button {
+    margin: 5px 0;
+    padding: 10px 15px;
+    cursor: pointer;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    transition: background-color 0.3s;
+  }
+  button:hover {
+    opacity: 0.8;
+  }
+  #infoModal {
+    display: none;
+    position: fixed;
+    z-index: 1;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.4);
+  }
+  .modal-content {
+    background-color: #fefefe;
+    margin: 15% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%;
+    max-width: 600px;
+  }
+  .close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+  }
+  .close:hover,
+  .close:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  @media (max-width: 768px) {
+    main {
+      flex-direction: column;
+    }
+    #controls {
+      width: 100%;
+      flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .control-group {
+      flex: 1 1 45%;
+      margin: 0 5px;
+    }
+    button {
+      flex: 1 1 auto;
+      font-size: 14px;
+      padding: 8px 12px;
+    }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>3D 鳶尾花分類器與 SVM 決策邊界</h1>
+  </header>
+  <main>
+    <div id="chart-container"></div>
+    <div id="controls">
+      <div class="control-group">
+        <h3>鳶尾花種類：</h3>
+        <button id="animateSetosa" style="background-color: #FF6B6B;">分類 山梔子花</button>
+        <button id="animateVersicolor" style="background-color: #4ECDC4;">分類 變色鳶尾</button>
+        <button id="animateVirginica" style="background-color: #45B7D1;">分類 維吉尼卡鳶尾</button>
+      </div>
+      <div class="control-group">
+        <h3>測量的特徵：</h3>
+        <button id="animateSepalLength" style="background-color: #FFA07A;">分類花萼長度</button>
+        <button id="animateSepalWidth" style="background-color: #98FB98;">分類花萼寬度</button>
+        <button id="animatePetalLength" style="background-color: #DDA0DD;">分類花瓣長度</button>
+        <button id="animatePetalWidth" style="background-color: #F0E68C;">分類花瓣寬度</button>
+      </div>
+      <button id="resetAnimation" style="background-color: #808080;">重置分類</button>
+      <button id="showInfo" style="background-color: #4CAF50;">顯示資訊</button>
+    </div>
+  </main>
+</div>
+
+<div id="infoModal" class="modal">
+  <div class="modal-content">
+    <span class="close">&times;</span>
+    <h2>鳶尾花數據集資訊</h2>
+    <p>鳶尾花數據集包含150個鳶尾花樣本，每種花各有50個樣本：</p>
+    <ul>
+      <li>Setosa 鳶尾花</li>
+      <li>Versicolor 鳶尾花</li>
+      <li>Virginica 鳶尾花</li>
+    </ul>
+    <p>每個樣本都有四個測量特徵：</p>
+    <ul>
+      <li>花萼長度</li>
+      <li>花萼寬度</li>
+      <li>花瓣長度</li>
+      <li>花瓣寬度</li>
+    </ul>
+    <p>SVM（支持向量機）演算法根據這些特徵對鳶尾花進行分類。</p>
+  </div>
+</div>
+
+<script>
+class IrisClassifierModel {
+  constructor() {
+    this.irisData = [];
+    this.irisFeatures = [];
+    this.svmPlane = null;
+  }
+
+  generateRandomIrisData() {
+    const species = ['setosa', 'versicolor', 'virginica'];
+    this.irisData = [];
+    
+    for (let i = 0; i < 150; i++) {
+      const speciesType = species[Math.floor(i / 50)];
+      const x = Math.random() * 100;
+      const y = Math.random() * 100;
+      const z = Math.random() * 100;
+      
+      this.irisData.push({x, y, z, species: speciesType, targetZ: z});
+    }
+  }
+
+  generateIrisFeatures() {
+    const features = ['sepalLength', 'sepalWidth', 'petalLength', 'petalWidth'];
+    this.irisFeatures = [];
+
+    for (let i = 0; i < 200; i++) {
+      const feature = features[i % 4];
+      const x = Math.random() * 100;
+      const y = Math.random() * 100;
+      const z = Math.random() * 100;
+
+      this.irisFeatures.push({x, y, z, feature: feature, targetZ: z});
+    }
+  }
+
+  generateSVMPlane(height) {
+    const x = math.range(0, 101, 1).toArray();
+    const y = math.range(0, 101, 1).toArray();
+    const z = Array(101).fill().map(() => Array(101).fill(height));
+    this.svmPlane = {x, y, z};
+  }
+
+  animateSpecies(selectedSpecies) {
+    const svmHeight = 50;
+    
+    this.irisData.forEach(point => {
+      if (point.species === selectedSpecies) {
+        point.targetZ = Math.random() * (100 - svmHeight - 2.5) + svmHeight + 2.5;
+      } else {
+        point.targetZ = Math.random() * (svmHeight - 2.5);
+      }
+    });
+
+    this.irisFeatures.forEach(point => {
+      point.targetZ = Math.random() * (svmHeight - 2.5);
+    });
+  }
+
+  animateFeature(selectedFeature) {
+    const svmHeight = 50;
+    
+    this.irisFeatures.forEach(point => {
+      if (point.feature === selectedFeature) {
+        point.targetZ = Math.random() * (100 - svmHeight - 2.5) + svmHeight + 2.5;
+      } else {
+        point.targetZ = Math.random() * (svmHeight - 2.5);
+      }
+    });
+
+    this.irisData.forEach(point => {
+      point.targetZ = Math.random() * (svmHeight - 2.5);
+    });
+  }
+
+  resetAnimation() {
+    this.irisData.forEach(point => {
+      point.targetZ = Math.random() * 100;
+    });
+    this.irisFeatures.forEach(point => {
+      point.targetZ = Math.random() * 100;
+    });
+  }
+
+  updatePointPositions() {
+    let stillAnimating = false;
+
+    const updatePoints = (points) => {
+      points.forEach(point => {
+        if (Math.abs(point.z - point.targetZ) > 0.1) {
+          point.z += (point.targetZ - point.z) * 0.1;
+          stillAnimating = true;
+        } else {
+          point.z = point.targetZ;
+        }
+      });
+    };
+
+    updatePoints(this.irisData);
+    updatePoints(this.irisFeatures);
+
+    return stillAnimating;
+  }
+}
+
+class IrisClassifierView {
+  constructor() {
+    this.chartContainer = document.getElementById('chart-container');
+    this.modal = document.getElementById('infoModal');
+    this.closeButton = document.getElementsByClassName('close')[0];
+  }
+
+  initChart(traces, layout) {
+    Plotly.newPlot(this.chartContainer, traces, layout, {responsive: true, displayModeBar: false});
+  }
+
+  updateChart(update) {
+    Plotly.restyle(this.chartContainer, update, [0, 1, 2, 3, 4, 5, 6]);
+  }
+
+  createScatterTrace(data, key, color) {
+    const filteredData = data.filter(d => d[key] === key);
+    return {
+      x: filteredData.map(d => d.x),
+      y: filteredData.map(d => d.y),
+      z: filteredData.map(d => d.z),
+      mode: 'markers',
+      type: 'scatter3d',
+      name: key,
+      marker: {
+        color: color,
+        size: 5,
+        symbol: 'circle',
+        line: { color: '#000000', width: 1 },
+        opacity: 0.8
+      },
+      hoverinfo: 'text',
+      text: filteredData.map(d => `${key}<br>X: ${d.x.toFixed(2)}<br>Y: ${d.y.toFixed(2)}<br>Z: ${d.z.toFixed(2)}`)
+    };
+  }
+
+  createSurfaceTrace(data, colorscale, opacity) {
+    return {
+      x: data.x,
+      y: data.y,
+      z: data.z,
+      type: 'surface',
+      colorscale: colorscale,
+      opacity: opacity,
+      showscale: false
+    };
+  }
+
+  showModal() {
+    this.modal.style.display = 'block';
+  }
+
+  hideModal() {
+    this.modal.style.display = 'none';
+  }
+}
+
+class IrisClassifierController {
+  constructor(model, view) {
+    this.model = model;
+    this.view = view;
+    this.animationFrameId = null;
+
+    this.initScene();
+    this.bindEvents();
+  }
+
+  initScene() {
+    this.model.generateRandomIrisData();
+    this.model.generateIrisFeatures();
+    this.model.generateSVMPlane(50);
+
+    const traces = [
+      this.view.createScatterTrace(this.model.irisData, '山梔子花', '#FF6B6B'),
+      this.view.createScatterTrace(this.model.irisData, '變色鳶尾', '#4ECDC4'),
+      this.view.createScatterTrace(this.model.irisData, '維吉尼卡鳶尾', '#45B7D1'),
+      this.view.createScatterTrace(this.model.irisFeatures, '萼片長度', '#FFA07A'),
+      this.view.createScatterTrace(this.model.irisFeatures, '萼片寬度', '#98FB98'),
+      this.view.createScatterTrace(this.model.irisFeatures, '花瓣長度', '#DDA0DD'),
+      this.view.createScatterTrace(this.model.irisFeatures, '花瓣寬度', '#F0E68C'),
+      this.view.createSurfaceTrace(this.model.svmPlane, [[0, 'rgb(255,0,0)'], [1, 'rgb(0,0,255)']], 0.5)
+    ];
+
+    const layout = {
+      scene: {
+        aspectmode: 'cube',
+        xaxis: { title: 'X (花萼長度)', range: [0, 100] },
+        yaxis: { title: 'Y (花萼寬度)', range: [0, 100] },
+        zaxis: { title: 'Z (花瓣長度)', range: [0, 100] },
+        camera: { 
+          eye: { x: 1.5, y: 1.5, z: 1.5 },
+          center: { x: 0, y: 0, z: 0 }
+        }
+      },
+      margin: { l: 0, r: 0, b: 0, t: 0 },
+      legend: { x: 0.8, y: 0.9 },
+      autosize: true,
+      hovermode: 'closest'
+    };
+
+    this.view.initChart(traces, layout);
+  }
+
+  bindEvents() {
+    document.getElementById('animateSetosa').addEventListener('click', () => this.animateSpecies('setosa'));
+    document.getElementById('animateVersicolor').addEventListener('click', () => this.animateSpecies('versicolor'));
+    document.getElementById('animateVirginica').addEventListener('click', () => this.animateSpecies('virginica'));
+    document.getElementById('animateSepalLength').addEventListener('click', () => this.animateFeature('sepalLength'));
+    document.getElementById('animateSepalWidth').addEventListener('click', () => this.animateFeature('sepalWidth'));
+    document.getElementById('animatePetalLength').addEventListener('click', () => this.animateFeature('petalLength'));
+    document.getElementById('animatePetalWidth').addEventListener('click', () => this.animateFeature('petalWidth'));
+    document.getElementById('resetAnimation').addEventListener('click', () => this.resetAnimation());
+    document.getElementById('showInfo').addEventListener('click', () => this.view.showModal());
+    this.view.closeButton.addEventListener('click', () => this.view.hideModal());
+    window.addEventListener('click', (event) => {
+      if (event.target == this.view.modal) {
+        this.view.hideModal();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      Plotly.Plots.resize(this.view.chartContainer);
+    });
+  }
+
+  animateSpecies(species) {
+    this.model.animateSpecies(species);
+    this.animate();
+  }
+
+  animateFeature(feature) {
+    this.model.animateFeature(feature);
+    this.animate();
+  }
+
+  resetAnimation() {
+    cancelAnimationFrame(this.animationFrameId);
+    this.model.resetAnimation();
+    this.animate();
+  }
+
+  animate() {
+    cancelAnimationFrame(this.animationFrameId);
+    
+    const animateFrame = () => {
+      const stillAnimating = this.model.updatePointPositions();
+      this.updateScatterTraces();
+
+      if (stillAnimating) {
+        this.animationFrameId = requestAnimationFrame(animateFrame);
+      }
+    };
+
+    animateFrame();
+  }
+
+  updateScatterTraces() {
+    const update = {
+      x: [
+        this.model.irisData.filter(d => d.species === 'setosa').map(d => d.x),
+        this.model.irisData.filter(d => d.species === 'versicolor').map(d => d.x),
+        this.model.irisData.filter(d => d.species === 'virginica').map(d => d.x),
+        this.model.irisFeatures.filter(d => d.feature === 'sepalLength').map(d => d.x),
+        this.model.irisFeatures.filter(d => d.feature === 'sepalWidth').map(d => d.x),
+        this.model.irisFeatures.filter(d => d.feature === 'petalLength').map(d => d.x),
+        this.model.irisFeatures.filter(d => d.feature === 'petalWidth').map(d => d.x)
+      ],
+      y: [
+        this.model.irisData.filter(d => d.species === 'setosa').map(d => d.y),
+        this.model.irisData.filter(d => d.species === 'versicolor').map(d => d.y),
+        this.model.irisData.filter(d => d.species === 'virginica').map(d => d.y),
+        this.model.irisFeatures.filter(d => d.feature === 'sepalLength').map(d => d.y),
+        this.model.irisFeatures.filter(d => d.feature === 'sepalWidth').map(d => d.y),
+        this.model.irisFeatures.filter(d => d.feature === 'petalLength').map(d => d.y),
+        this.model.irisFeatures.filter(d => d.feature === 'petalWidth').map(d => d.y)
+      ],
+      z: [
+        this.model.irisData.filter(d => d.species === 'setosa').map(d => d.z),
+        this.model.irisData.filter(d => d.species === 'versicolor').map(d => d.z),
+        this.model.irisData.filter(d => d.species === 'virginica').map(d => d.z),
+        this.model.irisFeatures.filter(d => d.feature === 'sepalLength').map(d => d.z),
+        this.model.irisFeatures.filter(d => d.feature === 'sepalWidth').map(d => d.z),
+        this.model.irisFeatures.filter(d => d.feature === 'petalLength').map(d => d.z),
+        this.model.irisFeatures.filter(d => d.feature === 'petalWidth').map(d => d.z)
+      ],
+      text: [
+        this.model.irisData.filter(d => d.species === 'setosa').map(d => `setosa<br>X: ${d.x.toFixed(2)}<br>Y: ${d.y.toFixed(2)}<br>Z: ${d.z.toFixed(2)}`),
+        this.model.irisData.filter(d => d.species === 'versicolor').map(d => `versicolor<br>X: ${d.x.toFixed(2)}<br>Y: ${d.y.toFixed(2)}<br>Z: ${d.z.toFixed(2)}`),
+        this.model.irisData.filter(d => d.species === 'virginica').map(d => `virginica<br>X: ${d.x.toFixed(2)}<br>Y: ${d.y.toFixed(2)}<br>Z: ${d.z.toFixed(2)}`),
+        this.model.irisFeatures.filter(d => d.feature === 'sepalLength').map(d => `sepalLength<br>X: ${d.x.toFixed(2)}<br>Y: ${d.y.toFixed(2)}<br>Z: ${d.z.toFixed(2)}`),
+        this.model.irisFeatures.filter(d => d.feature === 'sepalWidth').map(d => `sepalWidth<br>X: ${d.x.toFixed(2)}<br>Y: ${d.y.toFixed(2)}<br>Z: ${d.z.toFixed(2)}`),
+        this.model.irisFeatures.filter(d => d.feature === 'petalLength').map(d => `petalLength<br>X: ${d.x.toFixed(2)}<br>Y: ${d.y.toFixed(2)}<br>Z: ${d.z.toFixed(2)}`),
+        this.model.irisFeatures.filter(d => d.feature === 'petalWidth').map(d => `petalWidth<br>X: ${d.x.toFixed(2)}<br>Y: ${d.y.toFixed(2)}<br>Z: ${d.z.toFixed(2)}`)
+      ]
+    };
+
+    this.view.updateChart(update);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const model = new IrisClassifierModel();
+  const view = new IrisClassifierView();
+  new IrisClassifierController(model, view);
+});
+</script>
+</body></html>
